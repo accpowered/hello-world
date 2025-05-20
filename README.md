@@ -374,3 +374,106 @@ if __name__ == '__main__':
         print(f"关键词：{result['keyword']}\n{'='*50}")
 
 ```
+
+再4
+
+```python
+
+import os
+import argparse
+import pandas as pd
+from tqdm import tqdm
+
+def convert_size_to_bytes(size_str):
+    """将人类可读的文件大小转换为字节数"""
+    units = {'B': 1, 'K': 1024, 'M': 1024**2, 'G': 1024**3}
+    unit = size_str[-1].upper()
+    if unit.isdigit():
+        return int(size_str)
+    value = float(size_str[:-1])
+    return int(value * units[unit])
+
+def column_to_letter(col):
+    """将列索引转换为Excel列字母"""
+    letter = ''
+    while col >= 0:
+        letter = chr(col % 26 + 65) + letter
+        col = col // 26 - 1
+    return letter or 'A'
+
+def search_excel_files(folder_path, keywords, min_size=None, max_size=None):
+    """带进度条和文件大小过滤的搜索函数"""
+    print("正在扫描并筛选Excel文件...")
+    file_list = []
+    
+    # 转换文件大小单位为字节
+    min_bytes = convert_size_to_bytes(min_size) if min_size else 0
+    max_bytes = convert_size_to_bytes(max_size) if max_size else float('inf')
+
+    # 遍历文件并筛选
+    for root, _, files in os.walk(folder_path):
+        for file in files:
+            if file.lower().endswith('.xlsx'):
+                file_path = os.path.join(root, file)
+                file_size = os.path.getsize(file_path)
+                if min_bytes <= file_size <= max_bytes:
+                    file_list.append(file_path)
+
+    results = []
+    total_files = len(file_list)
+    
+    with tqdm(total=total_files, desc="搜索进度", unit="file", ncols=100) as pbar:
+        for file_path in file_list:
+            try:
+                # 使用Pandas读取Excel
+                xls = pd.ExcelFile(file_path, engine='openpyxl')
+                for sheet_name in xls.sheet_names:
+                    df = xls.parse(sheet_name, header=None, dtype=str)
+                    
+                    # 遍历所有单元格
+                    for row_idx, row in df.iterrows():
+                        for col_idx, cell in enumerate(row):
+                            cell_value = str(cell) if pd.notnull(cell) else ""
+                            for keyword in keywords:
+                                if keyword in cell_value:
+                                    cell_address = f"{column_to_letter(col_idx)}{row_idx+1}"
+                                    results.append({
+                                        'file': file_path,
+                                        'sheet': sheet_name,
+                                        'cell_address': cell_address,
+                                        'keyword': keyword
+                                    })
+                xls.close()
+            except Exception as e:
+                print(f"\n错误处理文件 {file_path}: {str(e)}")
+            finally:
+                pbar.update(1)
+                pbar.set_postfix({"当前文件": os.path.basename(file_path)[:20]})
+    
+    return results
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='在Excel文件中搜索关键词')
+    parser.add_argument('folder', help='要搜索的文件夹路径')
+    parser.add_argument('-k', '--keywords', nargs='+', required=True,
+                       help='要搜索的关键词列表（用空格分隔）')
+    parser.add_argument('--min-size', help='最小文件大小（例如：1M, 500K）')
+    parser.add_argument('--max-size', help='最大文件大小（例如：10M, 2G）')
+    args = parser.parse_args()
+
+    search_results = search_excel_files(
+        args.folder, 
+        args.keywords,
+        min_size=args.min_size,
+        max_size=args.max_size
+    )
+
+    print("\n搜索结果：")
+    for result in search_results:
+        print(f"文件：{result['file']}")
+        print(f"工作表：{result['sheet']}")
+        print(f"单元格：{result['cell_address']}")
+        print(f"关键词：{result['keyword']}\n{'='*50}")
+
+
+```
