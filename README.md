@@ -608,3 +608,185 @@ if __name__ == '__main__':
         print(f"关键词：{result['keyword']}\n{'='*50}")
 
 ```
+
+再6
+
+```python
+import os
+import argparse
+import pandas as pd
+import threading
+from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor
+from python_calamine.pandad import pandas_monkeypatch
+
+# 应用calamine补丁替换pandas的Excel引擎
+pandas_monkeypatch()
+
+# 全局锁用于保证文件写入安全
+result_lock = threading.Lock()
+status_lock = threading.Lock()
+
+class SearchManager:
+    def __init__(self, folder, result_file="search_results.log", status_file="search_status.txt"):
+        self.folder = folder
+        self.result_file = os.path.join(folder, result_file)
+        self.status_file = os.path.join(folder, status_file)
+        
+        # 初始化已完成文件记录
+        self.completed_files = set()
+        if os.path.exists(self.status_file):
+            with open(self.status_file, 'r') as f:
+                self.completed_files = set(f.read().splitlines())
+        
+        # 初始化结果文件（追加模式）
+        if not os.path.exists(self.result_file):
+            with open(self.result_file, 'w') as f:
+                f.write("文件路径,工作表名,单元格地址,关键词\n")
+
+    def record_result(self, result):
+        """线程安全地记录结果"""
+        with result_lock:
+            # 实时显示结果
+            print(f"[实时发现] {result['file']} -> {result['sheet']}!{result['cell_address']} ({result['keyword']})")
+            
+            # 保存到结果文件
+            with open(self.result_file, 'a') as f:
+                f.write(f"{result['file']},{result['sheet']},{result['cell_address']},{result['keyword']}\n")
+
+    def mark_completed(self, file_path):
+        """标记文件已完成处理"""
+        with status_lock:
+            with open(self.status_file, 'a') as f:
+                f.write(f"{file_path}\n")
+            self.completed_files.add(file_path)
+
+def convert_size_to_bytes(size_str):
+    """将人类可读的文件大小转换为字节数"""
+    units = {'B': 1, 'K': 1024, 'M': 1024**2, 'G': 1024**3}
+    if not size_str: return 0
+    
+    unit = size_str[-1].upper()
+    if unit.isdigit():
+        return int(size_str)
+    value = float(size_str[:-1])
+    return int(value * units.get(unit, 1))
+
+def column_to_letter(col):
+    """将列索引转换为Excel列字母"""
+    letter = ''
+    while col >= 0:
+        letter = chr(col % 26 + 65) + letter
+        col = col // 26 - 1
+    return letter or 'A'
+
+def process_single_file(file_path, keywords, manager):
+    """处理单个文件并返回结果"""
+    results = []
+    try:
+        with pd.ExcelFile(file_path, engine="calamine") as xls:
+            for sheet_name in xls.sheet_names:
+                df = xls.parse(
+                    sheet_name,
+                    header=None,
+                    dtype=str,
+                    na_filter=False,
+                    engine="calamine"
+                )
+                
+                # 遍历所有单元格
+                for row_idx, row in df.iterrows():
+                    for col_idx, cell in enumerate(row):
+                        if pd.isna(cell):
+                            continue
+                        cell_value = str(cell)
+                        for keyword in keywords:
+                            if keyword in cell_value:
+                                cell_address = f"{column_to_letter(col_idx)}{row_idx+1}"
+                                result = {
+                                    'file': file_path,
+                                    'sheet': sheet_name,
+                                    'cell_address': cell_address,
+                                    'keyword': keyword
+                                }
+                                results.append(result)
+                                manager.record_result(result)
+        # 标记文件完成处理
+        manager.mark_completed(file_path)
+    except Exception as e:
+        print(f"\n错误处理文件 {file_path}: {str(e)}")
+    return results
+
+def search_excel_files(folder_path, keywords, min_size=None, max_size=None, workers=4):
+    """支持断点续查的多线程搜索函数"""
+    manager = SearchManager(folder_path)
+    
+    print("正在扫描并筛选Excel文件...")
+    file_list = []
+    
+    # 转换文件大小单位
+    min_bytes = convert_size_to_bytes(min_size) if min_size else 0
+    max_bytes = convert_size_to_bytes(max_size) if max_size else float('inf')
+
+    # 遍历文件并筛选
+    for root, _, files in os.walk(folder_path):
+        for file in files:
+            if file.lower().endswith('.xlsx'):
+                file_path = os.path.join(root, file)
+                # 跳过已处理文件
+                if file_path in manager.completed_files:
+                    continue
+                file_size = os.path.getsize(file_path)
+                if min_bytes <= file_size <= max_bytes:
+                    file_list.append(file_path)
+
+    total_files = len(file_list)
+    results = []
+    
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        # 创建进度条
+        with tqdm(total=total_files, desc="搜索进度", unit="file", ncols=100) as pbar:
+            # 提交任务
+            futures = []
+            for file_path in file_list:
+                future = executor.submit(process_single_file, file_path, keywords, manager)
+                future.add_done_callback(lambda _: pbar.update(1))
+                futures.append(future)
+            
+            # 收集结果
+            for future in futures:
+                try:
+                    results.extend(future.result())
+                except Exception as e:
+                    print(f"\n任务执行错误: {str(e)}")
+                pbar.set_postfix({"剩余文件": f"{total_files - pbar.n}"})
+
+    # 完成后清理状态文件（如需保留注释此行）
+    # os.remove(manager.status_file)
+    return results
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='支持断点续查的多线程Excel搜索工具')
+    parser.add_argument('folder', help='要搜索的文件夹路径')
+    parser.add_argument('-k', '--keywords', nargs='+', required=True,
+                       help='要搜索的关键词列表（用空格分隔）')
+    parser.add_argument('--min-size', help='最小文件大小（例如：1M, 500K）')
+    parser.add_argument('--max-size', help='最大文件大小（例如：10M, 2G）')
+    parser.add_argument('-w', '--workers', type=int, default=4,
+                       help='线程池工作线程数（默认：4）')
+    args = parser.parse_args()
+
+    search_results = search_excel_files(
+        args.folder, 
+        args.keywords,
+        min_size=args.min_size,
+        max_size=args.max_size,
+        workers=args.workers
+    )
+
+    print("\n最终搜索结果已保存至：")
+    print(f"- 实时日志：{os.path.join(args.folder, 'search_results.log')}")
+    print(f"- 断点状态：{os.path.join(args.folder, 'search_status.txt')}")
+
+
+```
