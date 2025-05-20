@@ -477,3 +477,134 @@ if __name__ == '__main__':
 
 
 ```
+
+再5
+
+```python
+import os
+import argparse
+import pandas as pd
+from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor
+from python_calamine.pandad import pandas_monkeypatch
+
+# 应用calamine补丁替换pandas的Excel引擎
+pandas_monkeypatch()
+
+def convert_size_to_bytes(size_str):
+    """将人类可读的文件大小转换为字节数"""
+    units = {'B': 1, 'K': 1024, 'M': 1024**2, 'G': 1024**3}
+    if not size_str: return 0
+    
+    unit = size_str[-1].upper()
+    if unit.isdigit():
+        return int(size_str)
+    value = float(size_str[:-1])
+    return int(value * units.get(unit, 1))
+
+def column_to_letter(col):
+    """将列索引转换为Excel列字母"""
+    letter = ''
+    while col >= 0:
+        letter = chr(col % 26 + 65) + letter
+        col = col // 26 - 1
+    return letter or 'A'
+
+def process_single_file(file_path, keywords):
+    """处理单个文件并返回结果"""
+    results = []
+    try:
+        with pd.ExcelFile(file_path, engine="calamine") as xls:
+            for sheet_name in xls.sheet_names:
+                df = xls.parse(
+                    sheet_name,
+                    header=None,
+                    dtype=str,
+                    na_filter=False,
+                    engine="calamine"
+                )
+                
+                # 遍历所有单元格
+                for row_idx, row in df.iterrows():
+                    for col_idx, cell in enumerate(row):
+                        if pd.isna(cell):
+                            continue
+                        cell_value = str(cell)
+                        for keyword in keywords:
+                            if keyword in cell_value:
+                                cell_address = f"{column_to_letter(col_idx)}{row_idx+1}"
+                                results.append({
+                                    'file': file_path,
+                                    'sheet': sheet_name,
+                                    'cell_address': cell_address,
+                                    'keyword': keyword
+                                })
+    except Exception as e:
+        print(f"\n错误处理文件 {file_path}: {str(e)}")
+    return results
+
+def search_excel_files(folder_path, keywords, min_size=None, max_size=None, workers=4):
+    """多线程搜索函数"""
+    print("正在扫描并筛选Excel文件...")
+    file_list = []
+    
+    # 转换文件大小单位
+    min_bytes = convert_size_to_bytes(min_size) if min_size else 0
+    max_bytes = convert_size_to_bytes(max_size) if max_size else float('inf')
+
+    # 遍历文件并筛选
+    for root, _, files in os.walk(folder_path):
+        for file in files:
+            if file.lower().endswith('.xlsx'):
+                file_path = os.path.join(root, file)
+                file_size = os.path.getsize(file_path)
+                if min_bytes <= file_size <= max_bytes:
+                    file_list.append(file_path)
+
+    total_files = len(file_list)
+    results = []
+    
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        # 创建进度条
+        with tqdm(total=total_files, desc="搜索进度", unit="file", ncols=100) as pbar:
+            # 提交任务
+            futures = []
+            for file_path in file_list:
+                future = executor.submit(process_single_file, file_path, keywords)
+                future.add_done_callback(lambda _: pbar.update(1))
+                futures.append(future)
+            
+            # 收集结果
+            for future in futures:
+                results.extend(future.result())
+                pbar.set_postfix({"当前进度": f"{pbar.n}/{pbar.total}"})
+
+    return results
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='多线程Excel文件搜索工具')
+    parser.add_argument('folder', help='要搜索的文件夹路径')
+    parser.add_argument('-k', '--keywords', nargs='+', required=True,
+                       help='要搜索的关键词列表（用空格分隔）')
+    parser.add_argument('--min-size', help='最小文件大小（例如：1M, 500K）')
+    parser.add_argument('--max-size', help='最大文件大小（例如：10M, 2G）')
+    parser.add_argument('-w', '--workers', type=int, default=4,
+                       help='线程池工作线程数（默认：4）')
+    args = parser.parse_args()
+
+    search_results = search_excel_files(
+        args.folder, 
+        args.keywords,
+        min_size=args.min_size,
+        max_size=args.max_size,
+        workers=args.workers
+    )
+
+    print("\n搜索结果：")
+    for result in search_results:
+        print(f"文件：{result['file']}")
+        print(f"工作表：{result['sheet']}")
+        print(f"单元格：{result['cell_address']}")
+        print(f"关键词：{result['keyword']}\n{'='*50}")
+
+```
