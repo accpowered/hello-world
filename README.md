@@ -190,3 +190,115 @@ if __name__ == '__main__':
         print(f"关键词：{result['keyword']}\n{'='*50}")
 
 ```
+
+再来
+
+```python
+import os
+import argparse
+from openpyxl import load_workbook
+import xlrd
+from tqdm import tqdm
+
+def column_to_letter(col):
+    """将列索引转换为Excel列字母（例如：0 -> A，26 -> AA）"""
+    letter = ''
+    while col >= 0:
+        letter = chr(col % 26 + 65) + letter
+        col = col // 26 - 1
+    return letter
+
+def process_xlsx(file_path, keywords):
+    """处理.xlsx文件"""
+    results = []
+    try:
+        wb = load_workbook(filename=file_path, read_only=True, data_only=True)
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            for row in ws.iter_rows():
+                for cell in row:
+                    if cell.value is not None:
+                        cell_value = str(cell.value)
+                        matched_keywords = [k for k in keywords if k in cell_value]
+                        for keyword in matched_keywords:
+                            results.append({
+                                'file': file_path,
+                                'sheet': sheet_name,
+                                'cell_address': cell.coordinate,
+                                'keyword': keyword
+                            })
+        wb.close()
+    except Exception as e:
+        print(f"\nError processing {file_path}: {str(e)}")
+    return results
+
+def process_xls(file_path, keywords):
+    """处理.xls文件"""
+    results = []
+    try:
+        wb = xlrd.open_workbook(file_path)
+        for sheet in wb.sheets():
+            sheet_name = sheet.name
+            for row_idx in range(sheet.nrows):
+                for col_idx in range(sheet.ncols):
+                    cell = sheet.cell(row_idx, col_idx)
+                    cell_value = str(cell.value)
+                    matched_keywords = [k for k in keywords if k in cell_value]
+                    for keyword in matched_keywords:
+                        row_number = row_idx + 1
+                        col_letter = column_to_letter(col_idx)
+                        cell_address = f"{col_letter}{row_number}"
+                        results.append({
+                            'file': file_path,
+                            'sheet': sheet_name,
+                            'cell_address': cell_address,
+                            'keyword': keyword
+                        })
+    except Exception as e:
+        print(f"\nError processing {file_path}: {str(e)}")
+    return results
+
+def get_excel_files(folder_path):
+    """获取所有Excel文件路径"""
+    excel_files = []
+    for root, _, files in os.walk(folder_path):
+        for file in files:
+            if file.lower().endswith(('.xlsx', '.xls')):
+                excel_files.append(os.path.join(root, file))
+    return excel_files
+
+def search_excel_files_with_progress(folder_path, keywords):
+    """带进度条的搜索函数"""
+    print("正在扫描Excel文件...")
+    file_list = get_excel_files(folder_path)
+    total_files = len(file_list)
+    
+    results = []
+    with tqdm(total=total_files, desc="搜索进度", unit="file", ncols=100) as pbar:
+        for file_path in file_list:
+            if file_path.endswith('.xlsx'):
+                results.extend(process_xlsx(file_path, keywords))
+            elif file_path.endswith('.xls'):
+                results.extend(process_xls(file_path, keywords))
+            pbar.update(1)
+            pbar.set_postfix({"当前文件": os.path.basename(file_path)[:20]})
+    return results
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='在Excel文件中搜索关键词')
+    parser.add_argument('folder', help='要搜索的文件夹路径')
+    parser.add_argument('-k', '--keywords', nargs='+', required=True,
+                        help='要搜索的关键词列表（用空格分隔）')
+    args = parser.parse_args()
+
+    search_results = search_excel_files_with_progress(args.folder, args.keywords)
+
+    print("\n搜索结果：")
+    for result in search_results:
+        print(f"文件：{result['file']}")
+        print(f"工作表：{result['sheet']}")
+        print(f"单元格：{result['cell_address']}")
+        print(f"关键词：{result['keyword']}\n{'='*50}")
+
+
+```
