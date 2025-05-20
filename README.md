@@ -302,3 +302,75 @@ if __name__ == '__main__':
 
 
 ```
+
+再来3
+```python
+import os
+import argparse
+from tqdm import tqdm
+from python_calamine import CalamineWorkbook
+
+def search_excel_files(folder_path, keywords):
+    """带进度条的搜索函数"""
+    print("正在扫描Excel文件...")
+    file_list = []
+    for root, _, files in os.walk(folder_path):
+        for file in files:
+            if file.lower().endswith('.xlsx'):
+                file_list.append(os.path.join(root, file))
+    
+    results = []
+    total_files = len(file_list)
+    
+    with tqdm(total=total_files, desc="搜索进度", unit="file", ncols=100) as pbar:
+        for file_path in file_list:
+            try:
+                # 使用calamine读取Excel文件
+                wb = CalamineWorkbook.from_path(file_path)
+                for sheet in wb.sheets:
+                    df = sheet.to_python(skip_empty_rows=False)
+                    for row_idx, row in enumerate(df, 1):
+                        for col_idx, cell in enumerate(row, 1):
+                            cell_value = str(cell) if cell is not None else ""
+                            for keyword in keywords:
+                                if keyword in cell_value:
+                                    cell_address = f"{column_to_letter(col_idx-1)}{row_idx}"
+                                    results.append({
+                                        'file': file_path,
+                                        'sheet': sheet.name,
+                                        'cell_address': cell_address,
+                                        'keyword': keyword
+                                    })
+            except Exception as e:
+                print(f"\n错误处理文件 {file_path}: {str(e)}")
+            finally:
+                pbar.update(1)
+                pbar.set_postfix({"当前文件": os.path.basename(file_path)[:20]})
+    
+    return results
+
+def column_to_letter(col):
+    """将列索引转换为Excel列字母（例如：0 -> A，26 -> AA）"""
+    letter = ''
+    while col >= 0:
+        letter = chr(col % 26 + 65) + letter
+        col = col // 26 - 1
+    return letter or 'A'
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='在Excel文件中搜索关键词')
+    parser.add_argument('folder', help='要搜索的文件夹路径')
+    parser.add_argument('-k', '--keywords', nargs='+', required=True,
+                       help='要搜索的关键词列表（用空格分隔）')
+    args = parser.parse_args()
+
+    search_results = search_excel_files(args.folder, args.keywords)
+
+    print("\n搜索结果：")
+    for result in search_results:
+        print(f"文件：{result['file']}")
+        print(f"工作表：{result['sheet']}")
+        print(f"单元格：{result['cell_address']}")
+        print(f"关键词：{result['keyword']}\n{'='*50}")
+
+```
