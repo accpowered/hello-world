@@ -973,3 +973,155 @@ if __name__ == '__main__':
     )
 
 ```
+再8
+
+```python
+
+import os
+import argparse
+import pandas as pd
+import threading
+from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor
+from python_calamine.pandas import pandas_monkeypatch
+
+# 应用calamine补丁替换pandas的Excel引擎
+pandas_monkeypatch()
+
+# 全局锁用于保证文件写入安全
+result_lock = threading.Lock()
+status_lock = threading.Lock()
+
+class SearchManager:
+    def __init__(self, folder, result_file="search_results.log", status_file="search_status.txt"):
+        # ...（保持原有初始化逻辑不变）...
+
+    def record_result(self, result):
+        # ...（保持原有记录逻辑不变）...
+
+    def mark_completed(self, file_path):
+        # ...（保持原有标记逻辑不变）...
+
+def convert_size_to_bytes(size_str):
+    # ...（保持原有转换逻辑不变）...
+
+def column_to_letter(col):
+    # ...（保持原有转换逻辑不变）...
+
+def process_single_file(file_path, keywords, exclude_keywords, manager):
+    """处理单个文件并返回结果（增加排除关键词逻辑）"""
+    results = []
+    try:
+        with pd.ExcelFile(file_path, engine="calamine") as xls:
+            for sheet_name in xls.sheet_names:
+                df = xls.parse(
+                    sheet_name,
+                    header=None,
+                    dtype=str,
+                    na_filter=False,
+                    engine="calamine"
+                )
+                
+                # 遍历所有单元格
+                for row_idx, row in df.iterrows():
+                    for col_idx, cell in enumerate(row):
+                        if pd.isna(cell):
+                            continue
+                        cell_value = str(cell)
+                        
+                        # 检查排除关键词
+                        if any(ex_kw in cell_value for ex_kw in exclude_keywords):
+                            continue
+                            
+                        # 检查包含关键词
+                        matched_keywords = [kw for kw in keywords if kw in cell_value]
+                        for keyword in matched_keywords:
+                            cell_address = f"{column_to_letter(col_idx)}{row_idx+1}"
+                            result = {
+                                'file': file_path,
+                                'sheet': sheet_name,
+                                'cell_address': cell_address,
+                                'cell_content': cell_value,
+                                'keyword': keyword
+                            }
+                            results.append(result)
+                            manager.record_result(result)
+        manager.mark_completed(file_path)
+    except Exception as e:
+        print(f"\n错误处理文件 {file_path}: {str(e)}")
+    return results
+
+def search_excel_files(folder_path, keywords, exclude_keywords, min_size=None, max_size=None, workers=4):
+    """支持排除关键词的搜索函数"""
+    manager = SearchManager(folder_path)
+    
+    print("正在扫描并筛选Excel文件...")
+    file_list = []
+    
+    # 转换文件大小单位
+    min_bytes = convert_size_to_bytes(min_size) if min_size else 0
+    max_bytes = convert_size_to_bytes(max_size) if max_size else float('inf')
+
+    # 遍历文件并筛选
+    for root, _, files in os.walk(folder_path):
+        for file in files:
+            if file.lower().endswith('.xlsx'):
+                file_path = os.path.join(root, file)
+                if file_path in manager.completed_files:
+                    continue
+                file_size = os.path.getsize(file_path)
+                if min_bytes <= file_size <= max_bytes:
+                    file_list.append(file_path)
+
+    total_files = len(file_list)
+    results = []
+    
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        with tqdm(total=total_files, desc="搜索进度", unit="file", ncols=100) as pbar:
+            futures = []
+            for file_path in file_list:
+                future = executor.submit(
+                    process_single_file, 
+                    file_path, 
+                    keywords,
+                    exclude_keywords,  # 传递排除关键词
+                    manager
+                )
+                future.add_done_callback(lambda _: pbar.update(1))
+                futures.append(future)
+            
+            for future in futures:
+                try:
+                    results.extend(future.result())
+                except Exception as e:
+                    print(f"\n任务执行错误: {str(e)}")
+                pbar.set_postfix({"剩余文件": f"{total_files - pbar.n}"})
+
+    print("\n最终搜索结果已保存至：")
+    print(f"- 实时日志：{os.path.join(folder_path, 'search_results.log')}")
+    print(f"- 断点状态：{os.path.join(folder_path, 'search_status.txt')}")
+    return results
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='支持关键词排除的Excel搜索工具')
+    parser.add_argument('folder', help='要搜索的文件夹路径')
+    parser.add_argument('-k', '--keywords', nargs='+', required=True,
+                       help='要搜索的关键词列表（用空格分隔）')
+    parser.add_argument('-e', '--exclude', nargs='+', default=[],
+                       help='要排除的关键词列表（用空格分隔）')
+    parser.add_argument('--min-size', help='最小文件大小（例如：1M, 500K）')
+    parser.add_argument('--max-size', help='最大文件大小（例如：10M, 2G）')
+    parser.add_argument('-w', '--workers', type=int, default=4,
+                       help='线程池工作线程数（默认：4）')
+    args = parser.parse_args()
+
+    search_results = search_excel_files(
+        args.folder, 
+        args.keywords,
+        exclude_keywords=args.exclude,  # 新增排除关键词参数
+        min_size=args.min_size,
+        max_size=args.max_size,
+        workers=args.workers
+    )
+
+```
