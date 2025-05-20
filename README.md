@@ -96,3 +96,96 @@ A new line is added to test commit
    - 如果输入不合法 → 显示对应错误提示
 
 注意：实际使用时请将URL中的`https://abc.xyz/def.aspx`替换为真实的目标地址。
+
+
+
+import os
+import argparse
+from openpyxl import load_workbook
+import xlrd
+
+def column_to_letter(col):
+    """将列索引转换为Excel列字母（例如：0 -> A，26 -> AA）"""
+    letter = ''
+    while col >= 0:
+        letter = chr(col % 26 + 65) + letter
+        col = col // 26 - 1
+    return letter
+
+def process_xlsx(file_path, keywords):
+    """处理.xlsx文件"""
+    results = []
+    try:
+        wb = load_workbook(filename=file_path, read_only=True, data_only=True)
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            for row in ws.iter_rows():
+                for cell in row:
+                    if cell.value is not None:
+                        cell_value = str(cell.value)
+                        matched_keywords = [k for k in keywords if k in cell_value]
+                        for keyword in matched_keywords:
+                            results.append({
+                                'file': file_path,
+                                'sheet': sheet_name,
+                                'cell_address': cell.coordinate,
+                                'keyword': keyword
+                            })
+        wb.close()
+    except Exception as e:
+        print(f"Error processing {file_path}: {str(e)}")
+    return results
+
+def process_xls(file_path, keywords):
+    """处理.xls文件"""
+    results = []
+    try:
+        wb = xlrd.open_workbook(file_path)
+        for sheet in wb.sheets():
+            sheet_name = sheet.name
+            for row_idx in range(sheet.nrows):
+                for col_idx in range(sheet.ncols):
+                    cell = sheet.cell(row_idx, col_idx)
+                    cell_value = str(cell.value)
+                    matched_keywords = [k for k in keywords if k in cell_value]
+                    for keyword in matched_keywords:
+                        row_number = row_idx + 1
+                        col_letter = column_to_letter(col_idx)
+                        cell_address = f"{col_letter}{row_number}"
+                        results.append({
+                            'file': file_path,
+                            'sheet': sheet_name,
+                            'cell_address': cell_address,
+                            'keyword': keyword
+                        })
+    except Exception as e:
+        print(f"Error processing {file_path}: {str(e)}")
+    return results
+
+def search_excel_files(folder_path, keywords):
+    """递归搜索文件夹中的Excel文件"""
+    results = []
+    for root, _, files in os.walk(folder_path):
+        for file in files:
+            file_path = os.path.join(root, file)
+            if file.endswith('.xlsx'):
+                results.extend(process_xlsx(file_path, keywords))
+            elif file.endswith('.xls'):
+                results.extend(process_xls(file_path, keywords))
+    return results
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='在Excel文件中搜索关键词')
+    parser.add_argument('folder', help='要搜索的文件夹路径')
+    parser.add_argument('-k', '--keywords', nargs='+', required=True,
+                        help='要搜索的关键词列表（用空格分隔）')
+    args = parser.parse_args()
+
+    search_results = search_excel_files(args.folder, args.keywords)
+
+    for result in search_results:
+        print(f"文件：{result['file']}")
+        print(f"工作表：{result['sheet']}")
+        print(f"单元格：{result['cell_address']}")
+        print(f"关键词：{result['keyword']}\n{'='*50}")
+
