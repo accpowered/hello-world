@@ -1189,3 +1189,78 @@ if __name__ == "__main__":
     move_directory_with_progress(pathA, pathB)
     print(f"\n操作完成！'{pathA}' 已移动到 '{pathB}'")
 ```
+
+
+
+
+
+```python
+
+import os
+import shutil
+import sys
+from tqdm import tqdm
+
+def move_directory_with_progress(src, dst):
+    """移动目录并显示进度条（兼容所有 Python 3.x 版本）"""
+    # 获取源目录名称
+    src_name = os.path.basename(src.rstrip(os.sep))
+    
+    # 确定最终目标路径
+    if os.path.isdir(dst):
+        final_dst = os.path.join(dst, src_name)
+    else:
+        final_dst = dst
+    
+    # 确保目标父目录存在
+    os.makedirs(os.path.dirname(final_dst), exist_ok=True)
+    
+    # 计算总文件数
+    total_files = 0
+    for root, _, files in os.walk(src):
+        total_files += len(files)
+    
+    # 使用 tqdm 创建进度条
+    with tqdm(total=total_files, unit='file', desc='Moving files') as pbar:
+        # 手动复制目录结构
+        for root, dirs, files in os.walk(src):
+            # 计算相对路径
+            rel_path = os.path.relpath(root, src)
+            dest_dir = os.path.join(final_dst, rel_path)
+            
+            # 创建目标目录（如果不存在）
+            if not os.path.exists(dest_dir):
+                os.makedirs(dest_dir)
+            
+            # 复制文件
+            for file in files:
+                src_file = os.path.join(root, file)
+                dest_file = os.path.join(dest_dir, file)
+                
+                # 复制文件并保留元数据
+                shutil.copy2(src_file, dest_file)
+                pbar.update(1)
+        
+        # 复制完成后删除源目录
+        shutil.rmtree(src)
+
+if __name__ == "__main__":
+    # 配置你的路径
+    pathA = "/path/to/source/directory"  # 替换为你的源目录
+    pathB = "/path/to/destination"        # 替换为你的目标目录
+    
+    try:
+        # 检查路径是否存在
+        if not os.path.exists(pathA):
+            print(f"错误：源路径 '{pathA}' 不存在")
+            sys.exit(1)
+            
+        print(f"开始移动: {pathA} -> {pathB}")
+        move_directory_with_progress(pathA, pathB)
+        print(f"\n操作完成！'{pathA}' 已成功移动到 '{pathB}'")
+    except Exception as e:
+        print(f"\n移动过程中出错: {str(e)}")
+        sys.exit(1)
+
+
+```
