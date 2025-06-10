@@ -1125,3 +1125,67 @@ if __name__ == '__main__':
     )
 
 ```
+
+
+```python
+import os
+import shutil
+from tqdm import tqdm
+
+def move_directory_with_progress(src, dst):
+    """移动目录并显示进度条
+    
+    Args:
+        src (str): 源目录路径
+        dst (str): 目标目录路径
+    """
+    # 获取源目录的基本名称
+    src_base = os.path.basename(src)
+    
+    # 确定最终目标路径
+    if os.path.exists(dst) and os.path.isdir(dst):
+        final_dst = os.path.join(dst, src_base)
+    else:
+        final_dst = dst
+    
+    # 确保目标父目录存在
+    os.makedirs(os.path.dirname(final_dst), exist_ok=True)
+    
+    # 计算总文件数用于进度条
+    total_files = 0
+    for root, _, files in os.walk(src):
+        total_files += len(files)
+    
+    # 使用 tqdm 创建进度条
+    with tqdm(total=total_files, unit='file', desc='Moving files') as pbar:
+        # 自定义复制函数用于更新进度条
+        def copy_with_progress(src_path, dst_path):
+            shutil.copy2(src_path, dst_path)
+            pbar.update(1)
+        
+        # 执行目录移动（复制+删除）
+        try:
+            # 复制目录结构
+            shutil.copytree(
+                src, 
+                final_dst, 
+                copy_function=copy_with_progress,
+                dirs_exist_ok=True
+            )
+            # 删除原目录
+            shutil.rmtree(src)
+        except Exception as e:
+            # 错误处理：清理部分复制的文件
+            if os.path.exists(final_dst):
+                shutil.rmtree(final_dst)
+            raise RuntimeError(f"移动失败: {str(e)}")
+
+if __name__ == "__main__":
+    # 配置你的路径
+    pathA = "/path/to/source/directory"  # 替换为你的源目录
+    pathB = "/path/to/destination"        # 替换为你的目标目录
+    
+    # 执行移动操作
+    move_directory_with_progress(pathA, pathB)
+    print(f"\n操作完成！'{pathA}' 已移动到 '{pathB}'")
+```
