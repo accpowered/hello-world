@@ -264,4 +264,57 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+```bash
+@echo off
+setlocal enabledelayedexpansion
+
+:: ===== 用户配置区域 =====
+:: 设置旧电脑IP（运行时输入）
+set /p "OLD_PC_IP=请输入旧电脑的IP地址: "
+:: 自动获取当前用户名
+set USER_NAME=%USERNAME%
+:: 设置共享文件夹名称（旧电脑上需预先共享）
+set SHARE_NAME=UserData
+:: 排除文件夹列表（用分号分隔）
+set EXCLUDE_DIRS=Windows;Program Files;Program Files (x86);ProgramData;PerfLogs;`$Recycle.Bin;Temp;Temporary Internet Files;WinSxS;MicrosoftEdgeCache;EdgeTemp
+
+:: ===== 路径设置 =====
+set SOURCE_PATH="\\%OLD_PC_IP%\%SHARE_NAME%"
+set TARGET_PATH="C:\"
+set LOG_PATH="%TEMP%\Migration_Log_%date:~-4,4%%date:~-10,2%%date:~-7,2%.log"
+set FAIL_LOG="%TEMP%\Failed_Files_%date:~-4,4%%date:~-10,2%%date:~-7,2%.log"
+set DIFF_LOG="%TEMP%\Difference_Report_%date:~-4,4%%date:~-10,2%%date:~-7,2%.log"
+
+:: ===== 创建排除参数 =====
+set EXCLUDE_PARAM=
+for %%d in (%EXCLUDE_DIRS%) do set EXCLUDE_PARAM=!EXCLUDE_PARAM! /XD "%%d"
+
+:: ===== 主复制操作 =====
+echo 正在复制数据（支持断点续传）...
+robocopy %SOURCE_PATH% %TARGET_PATH% %EXCLUDE_PARAM% /E /COPY:DAT /Z /XJ /R:3 /W:5 /MT:16 /TEE /NP /TS /LOG+:%LOG_PATH% /UNILOG+
+
+:: ===== 生成差异报告 =====
+echo 生成文件差异报告...
+robocopy %SOURCE_PATH% %TARGET_PATH% %EXCLUDE_PARAM% /L /NJH /NJS /NP /NS /NC /NDL /XJ /LOG:%DIFF_LOG% >nul
+
+:: ===== 生成失败文件清单 =====
+echo 生成失败文件清单...
+findstr /i /c:"failed" /c:"error" /c:"extra" /c:"newer" "%LOG_PATH%" > "%FAIL_LOG%"
+
+:: ===== 完成报告 =====
+echo.
+echo ============== 迁移完成 ==============
+echo 完整日志: %LOG_PATH%
+echo 失败文件: %FAIL_LOG%
+echo 差异报告: %DIFF_LOG%
+echo.
+echo 提示：检查失败文件后，可重新运行本脚本继续传输
+echo =====================================
+pause
+
+
 ```
