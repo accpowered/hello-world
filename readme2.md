@@ -1,3 +1,131 @@
+```bash
+
+以下是一个使用Robocopy的批处理脚本，满足您的所有需求。它会逐个询问源文件夹路径，保留目录结构复制到X盘，支持断点续传、非管理员运行，并记录详细日志：
+
+```batch
+@echo off
+setlocal enabledelayedexpansion
+
+:: 配置区域
+set "LOG_DIR=%~dp0Logs"   &:: 日志存放目录（当前脚本目录下）
+set "TARGET_DRIVE=X:"     &:: 目标驱动器
+
+:: 创建日志目录
+if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
+set "LOG_FILE=%LOG_DIR%\%~n0_%date:~0,4%%date:~5,2%%date:~8,2%_%time:~0,2%%time:~3,2%.log"
+
+:: 主循环：询问源路径
+echo 数据迁移工具 (按回车键结束输入)
+echo ========================================
+:INPUT_LOOP
+set "source_path="
+set /p "source_path=请输入源文件夹路径: "
+
+if "!source_path!"=="" goto :EXECUTE_COPY
+
+:: 验证路径有效性
+if not exist "!source_path!\" (
+    echo [错误] 路径不存在: !source_path! >> "%LOG_FILE%"
+    echo [错误] 路径不存在: !source_path!
+    goto :INPUT_LOOP
+)
+
+:: 添加到路径列表
+set "PATHS_COUNT=!PATHS_COUNT!1"
+set "SOURCE_PATHS[!PATHS_COUNT!]=!source_path!"
+goto :INPUT_LOOP
+
+:EXECUTE_COPY
+if !PATHS_COUNT! LSS 1 (
+    echo 未提供有效路径，程序退出
+    pause
+    exit /b
+)
+
+:: 执行复制操作
+for /l %%i in (1,1,!PATHS_COUNT!) do (
+    set "source=!SOURCE_PATHS[%%i]!"
+    
+    :: 提取源路径结构（去掉盘符）
+    for %%d in (!source!) do set "relative_path=%%~pnxd"
+    
+    :: 构建目标路径
+    set "target=!TARGET_DRIVE!\!relative_path!"
+    
+    echo. >> "%LOG_FILE%"
+    echo [开始复制] !source! -> !target! >> "%LOG_FILE%"
+    echo [开始复制] !source! -> !target!
+    echo 开始时间: %date% %time% >> "%LOG_FILE%"
+    
+    :: 执行Robocopy
+    robocopy "!source!" "!target!" /E /Z /COPY:DAT /DCOPY:T /R:3 /W:5 /NP /TEE /LOG+:"%LOG_FILE%" /V
+    
+    echo 结束时间: %date% %time% >> "%LOG_FILE%"
+    echo ======================================== >> "%LOG_FILE%"
+)
+
+echo.
+echo 操作已完成！
+echo 日志文件保存位置: "%LOG_FILE%"
+pause
+```
+
+### 功能说明：
+1. **路径处理**：
+   - 交互式询问源文件夹路径（支持多个路径输入）
+   - 自动将 `C:\Folder1\Folder2` 映射为 `X:\Folder1\Folder2`
+   - 自动验证路径有效性
+
+2. **Robocopy 参数**：
+   - `/E`：复制所有子目录（包括空目录）
+   - `/Z`：支持断点续传（重启后可继续复制）
+   - `/COPY:DAT`：复制文件数据、属性和时间戳（无需管理员权限）
+   - `/DCOPY:T`：复制目录时间戳
+   - `/R:3 /W:5`：失败重试3次，每次等待5秒
+   - `/NP`：不显示进度百分比（保持日志整洁）
+   - `/TEE`：输出同时显示在屏幕和日志
+   - `/V`：生成详细日志
+   - `/LOG+`：追加模式记录日志（保留历史记录）
+
+3. **日志功能**：
+   - 自动在脚本目录创建 `Logs` 文件夹
+   - 日志命名格式：`脚本名_年月日_时分.log`
+   - 记录每个操作的开始/结束时间
+   - 包含成功/失败的文件详细信息
+
+4. **安全特性**：
+   - 无需管理员权限
+   - 路径验证防止无效输入
+   - 自动跳过空路径输入
+
+### 使用示例：
+```
+请输入源文件夹路径: C:\Projects\Alpha
+请输入源文件夹路径: D:\UserData\Documents
+请输入源文件夹路径: (直接回车开始复制)
+
+[开始复制] C:\Projects\Alpha -> X:\Projects\Alpha
+[开始复制] D:\UserData\Documents -> X:\UserData\Documents
+```
+
+### 注意事项：
+1. 目标驱动器必须是 `X:`（脚本第5行可修改）
+2. 日志文件会保存在脚本所在目录的 `Logs` 文件夹
+3. 按回车键结束路径输入并开始复制
+4. 如果复制中断，重新运行脚本会继续上次的复制进度
+
+> 提示：首次运行时如果提示`Logs`目录创建失败，请以管理员身份运行一次（后续使用无需管理员），或手动创建日志目录。
+
+
+```
+
+
+
+
+
+
+
+
 
 ```python
 import time
