@@ -1,4 +1,86 @@
 ```bash
+@echo off
+setlocal enabledelayedexpansion
+
+:: Configuration Section
+set "LOG_DIR=%~dp0Logs"   &:: Log storage directory (under script's directory)
+set "TARGET_DRIVE=X:"     &:: Target drive letter
+
+:: Initialize path counter
+set "PATHS_COUNT=0"
+
+:: Create log directory
+if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
+set "LOG_FILE=%LOG_DIR%\%~n0_%date:~0,4%%date:~5,2%%date:~8,2%_%time:~0,2%%time:~3,2%.log"
+
+:: Main loop: Prompt for source paths
+echo Data Migration Tool (Press Enter to finish input)
+echo ========================================
+:INPUT_LOOP
+set "source_path="
+set /p "source_path=Enter source folder path: "
+
+if "!source_path!"=="" goto :EXECUTE_COPY
+
+:: Validate path existence
+if not exist "!source_path!\" (
+    echo [ERROR] Path does not exist: !source_path! >> "%LOG_FILE%"
+    echo [ERROR] Path does not exist: !source_path!
+    goto :INPUT_LOOP
+)
+
+:: Add to path list
+set /a PATHS_COUNT+=1
+set "SOURCE_PATHS[!PATHS_COUNT!]=!source_path!"
+goto :INPUT_LOOP
+
+:EXECUTE_COPY
+if !PATHS_COUNT! LSS 1 (
+    echo No valid paths provided. Exiting...
+    pause
+    exit /b
+)
+
+:: Execute copy operations
+for /l %%i in (1,1,!PATHS_COUNT!) do (
+    set "source=!SOURCE_PATHS[%%i]!"
+    
+    :: Extract relative path structure (remove drive letter)
+    for %%d in ("!source!") do set "relative_path=%%~pnx"
+    
+    :: Build target path
+    set "target=!TARGET_DRIVE!\!relative_path!"
+    
+    echo. >> "%LOG_FILE%"
+    echo [START COPY] !source! -> !target! >> "%LOG_FILE%"
+    echo [START COPY] !source! -> !target!
+    echo Start Time: %date% %time% >> "%LOG_FILE%"
+    
+    :: Execute Robocopy
+    robocopy "!source!" "!target!" /E /Z /COPY:DAT /DCOPY:T /R:3 /W:5 /NP /TEE /LOG+:"%LOG_FILE%" /V
+    
+    echo End Time: %date% %time% >> "%LOG_FILE%"
+    echo ======================================== >> "%LOG_FILE%"
+)
+
+echo.
+echo Operation completed!
+echo Log file location: "%LOG_FILE%"
+pause
+
+
+```
+
+
+
+
+
+
+
+
+
+
+```bash
 
 以下是一个使用Robocopy的批处理脚本，满足您的所有需求。它会逐个询问源文件夹路径，保留目录结构复制到X盘，支持断点续传、非管理员运行，并记录详细日志：
 
