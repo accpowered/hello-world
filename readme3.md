@@ -172,3 +172,72 @@ echo Operation completed!
 echo Log file location: "%LOG_FILE%"
 pause
 ```
+
+
+
+```batch
+@echo off
+setlocal enabledelayedexpansion
+
+REM 设置默认虚拟环境路径（假设虚拟环境在脚本同一目录下）
+set "VENV_PATH=%~dp0abc"
+
+REM 检查虚拟环境是否存在
+if not exist "%VENV_PATH%\Scripts\activate.bat" (
+    echo 错误: 找不到虚拟环境
+    echo 预期路径: %VENV_PATH%
+    pause
+    exit /b 1
+)
+
+REM 询问用户选择工作目录
+echo 请选择Jupyter Notebook的工作目录:
+echo 1 - 使用当前脚本所在目录
+echo 2 - 使用我的文档目录
+echo 3 - 使用桌面
+echo 4 - 自定义路径
+set /p "choice=请输入选项数字 (1-4): "
+
+REM 根据用户选择设置工作目录
+if "!choice!"=="1" (
+    set "NOTEBOOK_DIR=%~dp0"
+) else if "!choice!"=="2" (
+    set "NOTEBOOK_DIR=%USERPROFILE%\Documents"
+) else if "!choice!"=="3" (
+    set "NOTEBOOK_DIR=%USERPROFILE%\Desktop"
+) else if "!choice!"=="4" (
+    set /p "NOTEBOOK_DIR=请输入完整路径: "
+) else (
+    echo 无效选择，使用默认目录(脚本所在目录)
+    set "NOTEBOOK_DIR=%~dp0"
+)
+
+REM 检查目录是否存在，如果不存在则创建
+if not exist "!NOTEBOOK_DIR!" (
+    echo 目录不存在，正在创建...
+    mkdir "!NOTEBOOK_DIR!"
+)
+
+REM 切换到指定目录
+cd /d "!NOTEBOOK_DIR!"
+
+REM 激活虚拟环境
+call "%VENV_PATH%\Scripts\activate.bat"
+
+REM 检查jupyter是否安装
+where jupyter >nul 2>nul
+if errorlevel 1 (
+    echo 错误: 虚拟环境中未找到jupyter
+    echo 请运行: pip install jupyter
+    pause
+    exit /b 1
+)
+
+echo 正在启动Jupyter Notebook...
+echo 工作目录: !NOTEBOOK_DIR!
+jupyter notebook
+
+pause
+
+
+```
